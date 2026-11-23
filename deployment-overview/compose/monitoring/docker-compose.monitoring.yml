@@ -1,0 +1,58 @@
+# OPTIONAL observability stack — see ../05-observability-optional.md.
+#
+# It is a separate compose project on purpose: you should be able to tear down
+# metrics without touching the data services. It attaches to the network that
+# the main stack created (ratewatch_default), so it can scrape the backend by
+# service name.
+#
+# Prerequisite: the main stack must be up at least once.
+#   cd ../ && docker compose up -d
+# Then:
+#   docker compose up -d
+#
+# Images are tagged :latest deliberately: pin them to the exact versions you
+# first pulled (docker inspect --format '{{index .RepoDigests 0}}') so a
+# `docker compose pull` months later cannot surprise you.
+
+name: ratewatch-monitoring
+
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: ratewatch-prometheus
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=15d
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - promdata:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+    networks: [ratewatch]
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: ratewatch-grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafanadata:/var/lib/grafana
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - prometheus
+    networks: [ratewatch]
+
+volumes:
+  promdata:
+  grafanadata:
+
+networks:
+  # Created by the main compose project (top-level `name: ratewatch`).
+  ratewatch:
+    name: ratewatch_default
+    external: true

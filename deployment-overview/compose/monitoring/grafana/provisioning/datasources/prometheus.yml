@@ -1,0 +1,11 @@
+# Auto-provisioned so Grafana has a working datasource on first start.
+# Without this you would have to click through the UI after every volume wipe.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false

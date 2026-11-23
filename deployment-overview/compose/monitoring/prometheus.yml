@@ -1,0 +1,22 @@
+# Prometheus scrape config for RateWatch.
+#
+# The path matters: application.yaml sets server.servlet.context-path: /api,
+# which prefixes actuator endpoints too.
+#   /api/actuator/health      -> readiness
+#   /api/actuator/prometheus  -> metrics (only exists once
+#                                micrometer-registry-prometheus is on the
+#                                classpath — see ../05-observability-optional.md)
+
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+scrape_configs:
+  - job_name: ratewatch-backend
+    metrics_path: /api/actuator/prometheus
+    static_configs:
+      - targets: ["backend:8080"]
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

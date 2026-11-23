@@ -1,0 +1,138 @@
+# RateWatch — homelab data + backend stack.
+#
+# Two rules this file follows on purpose:
+#   1. Every published port is bound to 127.0.0.1. The only way in is an SSH
+#      tunnel (see ../04-ssh-access-model.md). Nothing is on the LAN.
+#   2. Postgres is the only stateful service that matters. Redis has no
+#      volume at all — losing it costs you a cache miss, not data.
+#
+# Start everything:        docker compose up -d
+# Start only data:         docker compose up -d postgres redis
+# Logs:                    docker compose logs -f backend
+# Inspect state:           docker compose ps
+
+name: ratewatch
+
+services:
+  # ---------------------------------------------------------------------------
+  # Postgres — source of truth (rate_history).
+  # Image version is pinned to 17 to match TestcontainersConfiguration, so your
+  # tests and your homelab run the same major version. Bump both together.
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:17
+    container_name: ratewatch-postgres
+    restart: unless-stopped
+    environment:
+      # NOTE: these three only take effect the FIRST time the volume is
+      # initialised. Changing them later does not change the cluster.
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USERNAME}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      TZ: ${TZ:-Asia/Bangkok}
+      PGTZ: UTC
+    ports:
+      - "127.0.0.1:${DB_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # pg_isready over the unix socket: proves the server accepts connections,
+      # not just that the process exists.
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # Redis — read optimisation only (US-05). Never the only copy of anything.
+  # That is why persistence is deliberately OFF and memory is capped: a
+  # restart gives you a cold cache that falls back to Postgres, which is the
+  # exact behaviour the architecture already promises.
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7.4-alpine
+    container_name: ratewatch-redis
+    restart: unless-stopped
+    environment:
+      # redis-cli reads this, so the password never appears in `ps` output.
+      REDISCLI_AUTH: ${REDIS_PASSWORD}
+      TZ: ${TZ:-Asia/Bangkok}
+    command:
+      - redis-server
+      - --requirepass
+      - ${REDIS_PASSWORD}
+      - --maxmemory
+      - ${REDIS_MAXMEMORY:-256mb}
+      - --maxmemory-policy
+      - allkeys-lru
+      - --save
+      - ""
+      - --appendonly
+      - no
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -h 127.0.0.1 ping | grep -q PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  # ---------------------------------------------------------------------------
+  # Backend (Spring Boot). This is the only service built from this repo.
+  # Build context is ../../backend so the image contains only backend/, not
+  # .git/ and not the frontend.
+  # ---------------------------------------------------------------------------
+  backend:
+    build:
+      context: ../../backend
+      dockerfile: Dockerfile
+    image: ratewatch-backend:${APP_VERSION:-local}
+    container_name: ratewatch-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      # application-prod.yaml sets no server.port, so the app would listen on
+      # 8080 anyway; pinning it here makes the mapping below non-magical.
+      SERVER_PORT: "8080"
+      # Inside a compose network you address services by NAME, never localhost.
+      # "localhost" inside this container is the container itself.
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: ${DB_NAME}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:5173}
+      TZ: ${TZ:-Asia/Bangkok}
+      JAVA_TOOL_OPTIONS: "${JAVA_TOOL_OPTIONS:--XX:MaxRAMPercentage=70 -XX:+ExitOnOutOfMemoryError}"
+    ports:
+      - "127.0.0.1:${APP_PORT:-8081}:8080"
+    volumes:
+      # logback-spring.xml writes logs/app-json.log and logs/error-json.log
+      # relative to the working directory. Bind-mounting keeps them readable
+      # from the host (and survives `docker compose up --force-recreate`).
+      - type: bind
+        source: ${LOG_DIR:-/srv/ratewatch/logs}
+        target: /app/logs
+    healthcheck:
+      # bash's /dev/tcp works in the temurin image without installing curl.
+      # It only proves the port is open; if you want a real readiness check,
+      # read /api/actuator/health once curl is in the image.
+      test: ["CMD-SHELL", "bash -c ':> /dev/tcp/127.0.0.1/8080' || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  pgdata:
+    name: ratewatch_pgdata
