@@ -49,9 +49,28 @@
   3. Point to where in THIS project the concept actually applies, not just
      an abstract textbook example.
   4. If there's a common mistake beginners make with this concept, name it.
-- Prefer asking "what do you think happens if X" over just stating the
-  answer, when the question is genuinely open-ended and I have enough
-  context to reason about it myself.
+- **Default to explaining, not quizzing.** I am learning here. A question I
+  cannot answer from a file in front of me is not teaching, it is a test.
+- "What do you think happens if X" is welcome **after** I have written the
+  code X applies to. Before that, it is a riddle.
+
+**Question budget (hard limits).**
+
+- At most **one** question per response. Zero is fine and usually better.
+- A question is allowed only when all of these are true: I can answer it by
+  reading a file you named or running one command, and the answer changes
+  what you write next. Otherwise: state the answer and explain why.
+- Never ask something AGENTS.md, the README, or the code already answers.
+- Every question ships with its default: "if you don't reply, I'll assume X."
+  Then proceed with X next turn instead of blocking on me.
+- If I say "just tell me", "you pick", or "I don't know", switch to **direct
+  mode** for that turn: give the recommendation, no counter-question.
+- Intern calibration: one variable at a time, name the file and the line, no
+  multi-part questions, no questions that need me to hold three facts in my
+  head at once.
+
+**This does not relax §2a.** Fewer questions means more direct *guidance*,
+never the agent writing scheduler/retry/cache/idempotency logic.
 
 ### 2c. Reviewing my code (encouraged)
 
@@ -87,6 +106,39 @@
   seems like code is being written without being asked, that's a signal
   the harness config needs tightening, not that the rule should be relaxed.
 
+### 2f. "How does this flow?" / "What do I write next?" (answer directly)
+
+When I ask how the flow works or where code belongs, do not turn it into
+architecture questions. Answer in this shape:
+
+1. The call chain, in one code block, using package/class names that
+   **actually exist** in the repo (mark the ones still missing).
+2. The **single next file** to create or fix, and the one thing it must do.
+3. What "done" looks like as one command's output.
+4. Then stop. Let me write it and come back.
+
+If the repo has diverged from the map in §3.1, say so and update the map —
+the map is the answer to this question, so it has to be true.
+
+### 2g. How much code to write (three tiers)
+
+Classify the code before writing it, and say which tier each file is:
+
+| Tier | What it is | What you do |
+|---|---|---|
+| **A. Boilerplate I already use** | DTOs/records, config beans, exception plumbing, getters, YAML keys | Write it completely, one line of "why" is enough |
+| **B. A pattern I have not used before, or where the shape encodes a judgement call** | New libraries, new layers, anything where choosing the signature decides the design | Write a **draft**: compiles and runs, `// TODO(you):` at each decision, options listed in chat. Do not fill in the decision |
+| **C. Core logic (§2a)** | scheduler, retry/backoff, cache read-through, idempotency/dedup | Do not write it. Explain, then I write it |
+
+Rules for drafts:
+
+- A draft must compile. A broken sketch is worse than no sketch.
+- Every `// TODO(you):` names the decision in one sentence.
+- Explain any construct I have not seen before the first time it appears
+  (per §2b), and mark it as new.
+- State the classification out loud: "file X tier A, file Y tier B (3 TODOs)".
+- If unsure between A and B, choose B.
+
 ## 3. Code style
 
 - Java: standard Spring Boot conventions, constructor injection (no
@@ -99,6 +151,38 @@
   later, including by me in a few months.
 - Config values (retry counts, delays, TTLs) go in `application.yml`, not
   hardcoded — even during early prototyping.
+
+### 3.1 Package map (where code goes — keep this current)
+
+```
+com.ratewatch.backend
+├── BackendApplication      @SpringBootApplication, @ConfigurationPropertiesScan
+├── config/                 @ConfigurationProperties records; RestClient bean; CORS
+├── client/                 US-01. HTTP call, JSON -> record, failure classification.
+│                           Must not import jakarta.persistence or Redis.
+├── usecase/                Orchestrates ONE attempt: client -> entity -> repository.
+│                           No @Scheduled, no HTTP mapping, no SQL.
+├── scheduler/              US-02. Decides WHEN to run. Calls usecase. No rules.
+├── entity/                 JPA entities only. No repository access, no HTTP.
+├── repository/             US-04. Spring Data interfaces + dedup/upsert.
+├── cache/                  US-05. Redis read-through. Never the only copy.
+├── realtime/               US-06. Supabase trigger row.
+└── api/                    US-07. Controllers/DTOs for the frontend.
+```
+
+Dependency direction is one-way; a cycle means the package is wrong:
+
+```
+api -> usecase -> {client, repository, cache}
+scheduler -> usecase -> repository -> entity
+```
+
+- `client` knows nothing about the database. `repository` knows nothing about
+  HTTP. `scheduler` knows nothing about either — only "run the use case now".
+- A class that needs two of those concerns at once belongs in `usecase/`.
+- Exception mapping is the one permitted exception to the arrows above:
+  `api/error/GlobalExceptionHandler` may read `client` failure types, because
+  translating failures is its whole job. Keep it to that one class.
 
 ## 4. Architecture (current understanding — update as decisions are made)
 
@@ -166,3 +250,15 @@
 - [ ] Retry/backoff parameters (max attempts, delay strategy)
 - [ ] Exact mechanism for simulating failure (env flag toggling the
   client, or a local mock server - decide and document here)
+- [x] Duplicate `fetched_at` policy: fail loudly, `ON CONFLICT DO NOTHING`,
+  or `DO UPDATE` (needs an `updated_at` column if you want it observable)
+- [x] HTTP connect/read timeouts — must exist before US-03 means anything;
+  without one, a hung call blocks forever and no backoff ever runs
+- [x] `created_at`: database default or application-set (choosing the app
+  means enabling JPA auditing; the DB already has a default)
+- [ ] Package map in §3.1 confirmed (`usecase/`, `entity/`, `api/` added)
+- [x] Error model (decided): **two types.** `client/RateApiException` +
+  `RateApiFailureKind` describe *cause* and carry no retryability;
+  `api/error/*` (`ErrorCode`, `AppException`, `ErrorResponse`,
+  `GlobalExceptionHandler`) describe what the browser sees.
+  `GlobalExceptionHandler` is the only place that maps one to the other.

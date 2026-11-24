@@ -33,6 +33,14 @@ management:
 app:
   cors:
     allowed-origins: ${ALLOWED_ORIGINS:http://localhost:5173}
+  api:
+    base-url: ${RATE_API_BASE_URL:https://open.er-api.com/v6}
+    base-currency: USD
+    # The endpoint answers in ~100-200 ms. 3 s to connect covers a slow DNS or
+    # a cold TLS handshake; 10 s to read covers a slow-but-alive server while
+    # still guaranteeing the call cannot hang forever.
+    connect-timeout: 3s
+    read-timeout: 10s
 
 logging:
   level:
