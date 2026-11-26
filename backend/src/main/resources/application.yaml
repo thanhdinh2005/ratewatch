@@ -53,7 +53,6 @@ app:
     # Ceiling: a nonsense far-future timestamp must not park the scheduler
     # for years. The provider updates daily, so 24h is already generous.
     max-delay: 24h
-    enabled: true
 
 logging:
   level:
