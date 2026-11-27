@@ -4,6 +4,7 @@ import com.ratewatch.backend.entity.RateHistory;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.time.Instant;
+import java.util.Optional;
 
 public interface RateHistoryRepository extends JpaRepository<RateHistory, Long> {
 
@@ -17,4 +18,15 @@ public interface RateHistoryRepository extends JpaRepository<RateHistory, Long> 
    * DataIntegrityViolationException at flush/commit time.
    */
   boolean existsByFetchedAt(Instant fetchedAt);
+
+  /**
+   * The newest history row. This is the only place {@code next_update_at}
+   * survives a restart, so US-02's scheduler reads it on startup instead of
+   * keeping the next run time in a field it would lose on every deploy.
+   *
+   * <p>Derived query name: {@code findTopBy} + {@code OrderByFetchedAtDesc}.
+   * The property must be spelled exactly as on the entity — a typo here fails
+   * at startup with {@code PropertyReferenceException}, not at compile time.
+   */
+  Optional<RateHistory> findTopByOrderByFetchedAtDesc();
 }

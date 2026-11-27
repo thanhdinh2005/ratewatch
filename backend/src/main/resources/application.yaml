@@ -42,6 +42,18 @@ app:
     connect-timeout: 3s
     read-timeout: 10s
 
+  schedule:
+    # Off in tests (see application-test.yaml): a tick in @SpringBootTest would
+    # call the real provider and write a row into the test database.
+    enabled: ${RATE_SYNC_ENABLED:true}
+    # Used when the provider's time_next_update_unix is missing or unusable.
+    fallback-delay: ${RATE_SYNC_FALLBACK_DELAY:1h}
+    # Floor: a timestamp in the past must not become a busy loop.
+    min-delay: 1m
+    # Ceiling: a nonsense far-future timestamp must not park the scheduler
+    # for years. The provider updates daily, so 24h is already generous.
+    max-delay: 24h
+
 logging:
   level:
     root: INFO
