@@ -152,8 +152,8 @@ docker compose exec postgres psql -U postgre -d ratewatch_db \
 
 ## 10. Links
 
-- [`../../backend/src/main/java/com/ratewatch/backend/scheduler/RateFetchScheduler.java`](../../backend/src/main/java/com/ratewatch/backend/scheduler/RateFetchScheduler.java)
-- [`../../backend/src/main/java/com/ratewatch/backend/config/SchedulingConfig.java`](../../backend/src/main/java/com/ratewatch/backend/config/SchedulingConfig.java)
-- [`../../backend/src/main/java/com/ratewatch/backend/config/ScheduleProperties.java`](../../backend/src/main/java/com/ratewatch/backend/config/ScheduleProperties.java)
-- [`../../backend/src/main/resources/application.yaml`](../../backend/src/main/resources/application.yaml)
+- [`../../backend/src/main/java/com/ratewatch/backend/scheduler/RateFetchScheduler.java`](../backend/src/main/java/com/ratewatch/backend/scheduler/RateFetchScheduler.java)
+- [`../../backend/src/main/java/com/ratewatch/backend/config/SchedulingConfig.java`](../backend/src/main/java/com/ratewatch/backend/config/SchedulingConfig.java)
+- [`../../backend/src/main/java/com/ratewatch/backend/config/ScheduleProperties.java`](../backend/src/main/java/com/ratewatch/backend/config/ScheduleProperties.java)
+- [`../../backend/src/main/resources/application.yaml`](../backend/src/main/resources/application.yaml)
 - Next story: US-03 (retry with backoff) — where §4's decision belongs.
